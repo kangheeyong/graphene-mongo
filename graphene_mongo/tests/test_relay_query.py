@@ -1,15 +1,15 @@
-import os
-import json
 import base64
-import graphene
+import json
+import os
 
-from graphene.relay import Node
 from graphql_relay.node.node import to_global_id
 
-from . import models
-from . import nodes
+import graphene
+from graphene.relay import Node
+
 from ..fields import MongoengineConnectionField
 from ..types import MongoengineObjectType
+from . import models, nodes
 
 
 def test_should_query_reporter(fixtures):
@@ -414,7 +414,7 @@ def test_should_filter_through_inheritance(fixtures):
 def test_should_filter_by_list_contains(fixtures):
     # Notes: https://goo.gl/hMNRgs
     class Query(graphene.ObjectType):
-        reporters = MongoengineConnectionField(nodes.ReporterNode)
+        reporters = MongoengineConnectionField(nodes.ReporterNode, required=True)
 
     query = """
         query ReportersQuery {
@@ -444,11 +444,8 @@ def test_should_filter_by_list_contains(fixtures):
                         "firstName": "Allen",
                         "awards": ["2010-mvp"],
                         "genericReferences": [
-                            {
-                                "__typename": "ArticleNode",
-                                "headline": "Hello"
-                            }
-                        ]
+                            {"__typename": "ArticleNode", "headline": "Hello"}
+                        ],
                     }
                 }
             ]
@@ -995,22 +992,19 @@ def test_should_get_correct_list_of_documents(fixtures):
     """
     expected = {
         "players": {
-            "edges": [{
-                "node": {
-                    "firstName": "Michael",
-                    "articles": {
-                        "edges": [{
-                            "node": {
-                                "headline": "Hello"
-                            }
-                        }, {
-                            "node": {
-                                "headline": "World"
-                            }
-                        }]
+            "edges": [
+                {
+                    "node": {
+                        "firstName": "Michael",
+                        "articles": {
+                            "edges": [
+                                {"node": {"headline": "Hello"}},
+                                {"node": {"headline": "World"}},
+                            ]
+                        },
                     }
                 }
-            }]
+            ]
         }
     }
     schema = graphene.Schema(query=Query)
@@ -1042,15 +1036,63 @@ def test_should_filter_mongoengine_queryset_by_id_and_other_fields(fixtures):
                 }}
             }}
         }}
-    """.format(larry_relay_id=larry_relay_id)
+    """.format(
+        larry_relay_id=larry_relay_id
+    )
 
-    expected = {
-        'players': {
-            'edges': []
-        }
-    }
+    expected = {"players": {"edges": []}}
     schema = graphene.Schema(query=Query)
     result = schema.execute(query)
 
     assert not result.errors
-    assert json.dumps(result.data, sort_keys=True) == json.dumps(expected, sort_keys=True)
+    assert json.dumps(result.data, sort_keys=True) == json.dumps(
+        expected, sort_keys=True
+    )
+
+
+def test_should_query_reporters_with_nested_document_and_requied(fixtures):
+    class Query(graphene.ObjectType):
+        reporters = MongoengineConnectionField(nodes.ReporterNode)
+
+    query = """
+        query ReporterQuery {
+            reporters(firstName: "Allen") {
+                edges {
+                    node {
+                        firstName,
+                        lastName,
+                        email,
+                        articles(headline: "Hello") {
+                             edges {
+                                  node {
+                                       headline
+                                  }
+                             }
+                        }
+                    }
+                }
+            }
+        }
+    """
+    expected = {
+        "reporters": {
+            "edges": [
+                {
+                    "node": {
+                        "firstName": "Allen",
+                        "lastName": "Iverson",
+                        "email": "ai@gmail.com",
+                        "articles": {"edges": [{"node": {"headline": "Hello"}}]},
+                    }
+                }
+            ]
+        }
+    }
+
+    breakpoint()
+
+    schema = graphene.Schema(query=Query)
+    schema.introspect()
+    result = schema.execute(query)
+    assert not result.errors
+    assert result.data == expected
